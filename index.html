@@ -3,9 +3,104 @@
 <head>
   <meta charset="UTF-8" />
   <title>A-TrainBeatz Live Spotify</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+    #track-info { margin-top: 20px; }
+    img { border-radius: 10px; max-width: 300px; }
+  </style>
 </head>
 <body>
-  <h1>Welcome to A-TrainBeatz!</h1>
-  <p>This will show what I’m listening to live.</p>
+  <h1>A-TrainBeatz Live Spotify</h1>
+  <button id="login-btn">Log in with Spotify</button>
+  <div id="track-info" style="display:none;">
+    <img id="album-art" src="" alt="Album Art" />
+    <h2 id="track-name"></h2>
+    <p id="artist-name"></p>
+    <p id="playback-state"></p>
+    <p id="progress"></p>
+  </div>
+
+  <script>
+    const clientId = 'cd2de6595a824dca89763e3498bfe23e'; // Replace with your Spotify Client ID
+    const redirectUri = window.location.origin + window.location.pathname;
+    const scopes = 'user-read-playback-state user-read-currently-playing';
+
+    const loginBtn = document.getElementById('login-btn');
+    const trackInfo = document.getElementById('track-info');
+    const albumArt = document.getElementById('album-art');
+    const trackName = document.getElementById('track-name');
+    const artistName = document.getElementById('artist-name');
+    const playbackState = document.getElementById('playback-state');
+    const progress = document.getElementById('progress');
+
+    function getTokenFromUrl() {
+      return window.location.hash
+        .substring(1)
+        .split('&')
+        .reduce((initial, item) => {
+          let parts = item.split('=');
+          initial[parts[0]] = decodeURIComponent(parts[1]);
+          return initial;
+        }, {});
+    }
+
+    let accessToken = null;
+
+    function login() {
+      const authUrl =
+        'https://accounts.spotify.com/authorize' +
+        '?response_type=token' +
+        '&client_id=' + encodeURIComponent(clientId) +
+        '&scope=' + encodeURIComponent(scopes) +
+        '&redirect_uri=' + encodeURIComponent(redirectUri);
+
+      window.location = authUrl;
+    }
+
+    async function fetchCurrentlyPlaying() {
+      const response = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+        headers: { Authorization: 'Bearer ' + accessToken }
+      });
+
+      if (response.status === 204 || response.status > 400) {
+        playbackState.textContent = 'No track is currently playing.';
+        progress.textContent = '';
+        albumArt.style.display = 'none';
+        trackName.textContent = '';
+        artistName.textContent = '';
+        return;
+      }
+
+      const data = await response.json();
+
+      albumArt.style.display = 'block';
+      albumArt.src = data.item.album.images[0].url;
+      trackName.textContent = data.item.name;
+      artistName.textContent = data.item.artists.map(artist => artist.name).join(', ');
+      playbackState.textContent = data.is_playing ? '▶ Playing' : '⏸ Paused';
+
+      const progressMs = data.progress_ms;
+      const durationMs = data.item.duration_ms;
+
+      progress.textContent = `Progress: ${Math.floor(progressMs / 1000)}s / ${Math.floor(durationMs / 1000)}s`;
+    }
+
+    loginBtn.addEventListener('click', () => {
+      login();
+    });
+
+    window.onload = () => {
+      const hash = getTokenFromUrl();
+      window.location.hash = ''; // clear hash from URL
+
+      if (hash.access_token) {
+        accessToken = hash.access_token;
+        loginBtn.style.display = 'none';
+        trackInfo.style.display = 'block';
+        fetchCurrentlyPlaying();
+        setInterval(fetchCurrentlyPlaying, 5000); // update every 5 seconds
+      }
+    };
+  </script>
 </body>
 </html>
