@@ -2,105 +2,38 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>A-TrainBeatz Live Spotify</title>
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
-    #track-info { margin-top: 20px; }
-    img { border-radius: 10px; max-width: 300px; }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Now Playing</title>
 </head>
 <body>
-  <h1>A-TrainBeatz Live Spotify</h1>
-  <button id="login-btn">Log in with Spotify</button>
-  <div id="track-info" style="display:none;">
-    <img id="album-art" src="" alt="Album Art" />
-    <h2 id="track-name"></h2>
-    <p id="artist-name"></p>
-    <p id="playback-state"></p>
-    <p id="progress"></p>
-  </div>
+  <h1>Currently Playing</h1>
+  <div id="track">Loading...</div>
 
   <script>
-    const clientId = 'cd2de6595a824dca89763e3498bfe23e'; // Replace with your Spotify Client ID
-    const redirectUri = window.location.origin + window.location.pathname;
-    const scopes = 'user-read-playback-state user-read-currently-playing';
+    async function fetchNowPlaying() {
+      try {
+        const res = await fetch('https://spotify-backend-pkqi.onrender.com/now-playing');
+        if (!res.ok) {
+          throw new Error('Failed to fetch');
+        }
+        const data = await res.json();
 
-    const loginBtn = document.getElementById('login-btn');
-    const trackInfo = document.getElementById('track-info');
-    const albumArt = document.getElementById('album-art');
-    const trackName = document.getElementById('track-name');
-    const artistName = document.getElementById('artist-name');
-    const playbackState = document.getElementById('playback-state');
-    const progress = document.getElementById('progress');
+        const track = data.item?.name || 'Nothing playing';
+        const artist = data.item?.artists?.map(a => a.name).join(', ') || '';
+        const image = data.item?.album?.images?.[0]?.url || '';
 
-    function getTokenFromUrl() {
-      return window.location.hash
-        .substring(1)
-        .split('&')
-        .reduce((initial, item) => {
-          let parts = item.split('=');
-          initial[parts[0]] = decodeURIComponent(parts[1]);
-          return initial;
-        }, {});
-    }
-
-    let accessToken = null;
-
-    function login() {
-      const authUrl =
-        'https://accounts.spotify.com/authorize' +
-        '?response_type=token' +
-        '&client_id=' + encodeURIComponent(clientId) +
-        '&scope=' + encodeURIComponent(scopes) +
-        '&redirect_uri=' + encodeURIComponent(redirectUri);
-
-      window.location = authUrl;
-    }
-
-    async function fetchCurrentlyPlaying() {
-      const response = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
-        headers: { Authorization: 'Bearer ' + accessToken }
-      });
-
-      if (response.status === 204 || response.status > 400) {
-        playbackState.textContent = 'No track is currently playing.';
-        progress.textContent = '';
-        albumArt.style.display = 'none';
-        trackName.textContent = '';
-        artistName.textContent = '';
-        return;
+        document.getElementById('track').innerHTML = `
+          <p><strong>${track}</strong> by ${artist}</p>
+          ${image ? `<img src="${image}" width="300">` : ''}
+        `;
+      } catch (err) {
+        console.error(err);
+        document.getElementById('track').textContent = 'Error loading data.';
       }
-
-      const data = await response.json();
-
-      albumArt.style.display = 'block';
-      albumArt.src = data.item.album.images[0].url;
-      trackName.textContent = data.item.name;
-      artistName.textContent = data.item.artists.map(artist => artist.name).join(', ');
-      playbackState.textContent = data.is_playing ? '▶ Playing' : '⏸ Paused';
-
-      const progressMs = data.progress_ms;
-      const durationMs = data.item.duration_ms;
-
-      progress.textContent = `Progress: ${Math.floor(progressMs / 1000)}s / ${Math.floor(durationMs / 1000)}s`;
     }
 
-    loginBtn.addEventListener('click', () => {
-      login();
-    });
-
-    window.onload = () => {
-      const hash = getTokenFromUrl();
-      window.location.hash = ''; // clear hash from URL
-
-      if (hash.access_token) {
-        accessToken = hash.access_token;
-        loginBtn.style.display = 'none';
-        trackInfo.style.display = 'block';
-        fetchCurrentlyPlaying();
-        setInterval(fetchCurrentlyPlaying, 5000); // update every 5 seconds
-      }
-    };
+    fetchNowPlaying();
+    setInterval(fetchNowPlaying, 10000); // refresh every 10s
   </script>
 </body>
 </html>
