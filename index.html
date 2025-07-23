@@ -1,42 +1,59 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" >
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>A-TrainBeatz • Now Playing</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>A-TrainBeatz • Now Playing with Fluid BG & Playback</title>
   <style>
+    /* Reset & fonts */
     * {
       box-sizing: border-box;
-      margin: 0;
-      padding: 0;
+      margin: 0; padding: 0;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
 
-    body {
+    html, body {
+      height: 100%;
       background: #121212;
-      color: #fff;
+      overflow: hidden;
+      color: white;
       display: flex;
-      flex-direction: column;
       justify-content: center;
       align-items: center;
-      height: 100vh;
       text-align: center;
       padding: 20px;
+    }
+
+    /* Canvas fills entire viewport behind content */
+    #fluid-bg {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none; /* click through */
+      z-index: 0;
+      filter: blur(15px) brightness(0.9);
+      mix-blend-mode: screen;
+    }
+
+    /* Content container */
+    #track-info {
+      background: rgba(30, 30, 30, 0.8);
+      border-radius: 15px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      max-width: 450px;
+      width: 100%;
+      padding: 25px;
+      position: relative;
+      z-index: 1;
+      user-select: none;
     }
 
     h1 {
       margin-bottom: 20px;
       font-size: 2rem;
       color: #1db954;
-    }
-
-    #track-info {
-      background: #1e1e1e;
-      padding: 25px;
-      border-radius: 15px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      max-width: 450px;
-      width: 100%;
+      user-select: text;
     }
 
     img {
@@ -44,12 +61,15 @@
       max-width: 400px;
       border-radius: 10px;
       margin-bottom: 20px;
+      user-select: none;
+      pointer-events: none;
     }
 
     .track-name {
       font-size: 1.5rem;
       font-weight: bold;
-      color: #fff;
+      color: white;
+      margin-bottom: 5px;
     }
 
     .artist-name {
@@ -63,41 +83,181 @@
       color: #888;
     }
 
+    /* Responsive */
     @media (max-width: 600px) {
-      h1 {
-        font-size: 1.5rem;
-      }
-
-      .track-name {
-        font-size: 1.2rem;
-      }
-
-      .artist-name {
-        font-size: 1rem;
-      }
+      h1 { font-size: 1.5rem; }
+      .track-name { font-size: 1.2rem; }
+      .artist-name { font-size: 1rem; }
     }
   </style>
 </head>
 <body>
-  <h1>🎧 A-Train is listening to...</h1>
+  <!-- Fluid Background Canvas -->
+  <canvas id="fluid-bg"></canvas>
+
+  <!-- Main Content -->
   <div id="track-info">
+    <h1>🎧 A-TrainBeatz is listening to...</h1>
     <div id="content">Loading...</div>
   </div>
 
   <script>
+    const backendUrl = 'https://spotify-backend-pkqi.onrender.com';
+
+    // Format ms to m:ss
     function formatTime(ms) {
-      const minutes = Math.floor(ms / 60000);
-      const seconds = Math.floor((ms % 60000) / 1000);
-      return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+      const m = Math.floor(ms / 60000);
+      const s = Math.floor((ms % 60000) / 1000);
+      return `${m}:${s < 10 ? '0' : ''}${s}`;
     }
 
+    // Fluid BG Setup — simple pulsing blobs
+    (() => {
+      const canvas = document.getElementById('fluid-bg');
+      const ctx = canvas.getContext('2d');
+      let width, height;
+      let blobs = [];
+
+      function resize() {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+      }
+      window.addEventListener('resize', resize);
+      resize();
+
+      class Blob {
+        constructor(x, y, radius, color, speed) {
+          this.x = x;
+          this.y = y;
+          this.radius = radius;
+          this.color = color;
+          this.speed = speed;
+          this.angle = Math.random() * 2 * Math.PI;
+        }
+        update() {
+          this.angle += this.speed;
+          this.x += Math.cos(this.angle) * 0.5;
+          this.y += Math.sin(this.angle) * 0.5;
+        }
+        draw() {
+          const gradient = ctx.createRadialGradient(this.x, this.y, this.radius * 0.3, this.x, this.y, this.radius);
+          gradient.addColorStop(0, this.color + 'CC'); // semi-transparent
+          gradient.addColorStop(1, this.color + '00'); // fully transparent
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+          ctx.arc(this.x, this.y, this.radius, 0, 2 * Math.PI);
+          ctx.fill();
+        }
+      }
+
+      // Create multicolor blobs with slow pulsing speed
+      blobs = [
+        new Blob(width * 0.25, height * 0.3, 160, '#1db954', 0.008),
+        new Blob(width * 0.7, height * 0.5, 130, '#ff5c5c', 0.006),
+        new Blob(width * 0.5, height * 0.75, 140, '#54a0ff', 0.007)
+      ];
+
+      function animate() {
+        ctx.clearRect(0, 0, width, height);
+        blobs.forEach(blob => {
+          blob.update();
+          blob.draw();
+        });
+        requestAnimationFrame(animate);
+      }
+      animate();
+    })();
+
+    // Spotify Playback SDK Setup
+    let player;
+    let deviceId = null;
+    let accessToken = null;
+
+    async function fetchAccessToken() {
+      // This fetches a fresh token from your backend
+      // Add a backend endpoint to refresh token or serve token on demand if needed
+      // For demo, we’ll just reuse the last token from login flow (you'll need to adjust accordingly)
+
+      // Let's assume you store it in localStorage after login — or fetch from backend here
+
+      // For now, you must log in via backend /login and save token manually (or extend backend)
+      alert('To enable playback, please authenticate by visiting the backend login URL and authorize with Spotify.');
+    }
+
+    window.onSpotifyWebPlaybackSDKReady = () => {
+      if (!accessToken) {
+        fetchAccessToken();
+        return;
+      }
+
+      player = new Spotify.Player({
+        name: "A-TrainBeatz Player",
+        getOAuthToken: cb => { cb(accessToken); },
+        volume: 0.5
+      });
+
+      player.addListener('ready', ({ device_id }) => {
+        console.log('Player ready with Device ID', device_id);
+        deviceId = device_id;
+        transferPlaybackHere();
+      });
+
+      player.addListener('not_ready', ({ device_id }) => {
+        console.log('Device ID has gone offline', device_id);
+      });
+
+      player.connect();
+    };
+
+    // Transfer playback to this device and play current track from backend info
+    async function transferPlaybackHere() {
+      if (!deviceId) return;
+
+      // Fetch current playing track and position from backend
+      const res = await fetch(backendUrl + '/now-playing');
+      if (!res.ok) return;
+
+      const data = await res.json();
+      if (!data || !data.item) return;
+
+      const trackUri = data.item.uri;
+      const progressMs = data.progress_ms;
+
+      // Transfer playback
+      await fetch('https://api.spotify.com/v1/me/player', {
+        method: 'PUT',
+        headers: {
+          'Authorization': 'Bearer ' + accessToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          device_ids: [deviceId],
+          play: true
+        })
+      });
+
+      // Start playing the current track at the progress position
+      await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': 'Bearer ' + accessToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          uris: [trackUri],
+          position_ms: progressMs
+        })
+      });
+    }
+
+    // Fetch and display track info
     async function fetchNowPlaying() {
       try {
-        const res = await fetch('https://spotify-backend-pkqi.onrender.com/now-playing');
+        const res = await fetch(backendUrl + '/now-playing');
         const data = await res.json();
 
         if (!data || !data.item) {
-          document.getElementById('content').innerHTML = '<p>Unfortunately, A-Train is not listening to anything right now. please check back later.</p>';
+          document.getElementById('content').innerHTML = '<p>Nothing playing right now.</p>';
           return;
         }
 
@@ -113,14 +273,22 @@
           <div class="artist-name">by ${artists}</div>
           <div class="progress-time">Progress: ${progress} / ${duration}</div>
         `;
+
       } catch (err) {
         console.error(err);
-        document.getElementById('content').innerHTML = '<p>Unfortunately, A-Train is not listening to anything right now. please check back later.</p>';
+        document.getElementById('content').innerHTML = '<p>Could not load track info.</p>';
       }
     }
 
+    // Poll every 10 seconds
     fetchNowPlaying();
-    setInterval(fetchNowPlaying, 1000);
+    setInterval(fetchNowPlaying, 10000);
+
+    // Load Spotify SDK script
+    const script = document.createElement('script');
+    script.src = 'https://sdk.scdn.co/spotify-player.js';
+    document.head.appendChild(script);
+
   </script>
 </body>
 </html>
