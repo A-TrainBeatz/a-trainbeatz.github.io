@@ -3,37 +3,124 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Now Playing</title>
+  <title>A-TrainBeatz • Now Playing</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      background: #121212;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      text-align: center;
+      padding: 20px;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+      font-size: 2rem;
+      color: #1db954;
+    }
+
+    #track-info {
+      background: #1e1e1e;
+      padding: 25px;
+      border-radius: 15px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      max-width: 450px;
+      width: 100%;
+    }
+
+    img {
+      width: 100%;
+      max-width: 400px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
+
+    .track-name {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #fff;
+    }
+
+    .artist-name {
+      font-size: 1.1rem;
+      color: #bbb;
+      margin-bottom: 10px;
+    }
+
+    .progress-time {
+      font-size: 0.95rem;
+      color: #888;
+    }
+
+    @media (max-width: 600px) {
+      h1 {
+        font-size: 1.5rem;
+      }
+
+      .track-name {
+        font-size: 1.2rem;
+      }
+
+      .artist-name {
+        font-size: 1rem;
+      }
+    }
+  </style>
 </head>
 <body>
-  <h1>Currently Playing</h1>
-  <div id="track">Loading...</div>
+  <h1>🎧 A-Train is listening to...</h1>
+  <div id="track-info">
+    <div id="content">Loading...</div>
+  </div>
 
   <script>
+    function formatTime(ms) {
+      const minutes = Math.floor(ms / 60000);
+      const seconds = Math.floor((ms % 60000) / 1000);
+      return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+    }
+
     async function fetchNowPlaying() {
       try {
         const res = await fetch('https://spotify-backend-pkqi.onrender.com/now-playing');
-        if (!res.ok) {
-          throw new Error('Failed to fetch');
-        }
         const data = await res.json();
 
-        const track = data.item?.name || 'Nothing playing';
-        const artist = data.item?.artists?.map(a => a.name).join(', ') || '';
-        const image = data.item?.album?.images?.[0]?.url || '';
+        if (!data || !data.item) {
+          document.getElementById('content').innerHTML = '<p>Unfortunately, A-Train is not listening to anything right now. please check back later.</p>';
+          return;
+        }
 
-        document.getElementById('track').innerHTML = `
-          <p><strong>${track}</strong> by ${artist}</p>
-          ${image ? `<img src="${image}" width="300">` : ''}
+        const track = data.item.name;
+        const artists = data.item.artists.map(artist => artist.name).join(', ');
+        const image = data.item.album.images[0].url;
+        const progress = formatTime(data.progress_ms);
+        const duration = formatTime(data.item.duration_ms);
+
+        document.getElementById('content').innerHTML = `
+          <img src="${image}" alt="Album cover">
+          <div class="track-name">${track}</div>
+          <div class="artist-name">by ${artists}</div>
+          <div class="progress-time">Progress: ${progress} / ${duration}</div>
         `;
       } catch (err) {
         console.error(err);
-        document.getElementById('track').textContent = 'Error loading data.';
+        document.getElementById('content').innerHTML = '<p>Unfortunately, A-Train is not listening to anything right now. please check back later.</p>';
       }
     }
 
     fetchNowPlaying();
-    setInterval(fetchNowPlaying, 10000); // refresh every 10s
+    setInterval(fetchNowPlaying, 1000);
   </script>
 </body>
 </html>
