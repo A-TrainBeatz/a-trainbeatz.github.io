@@ -1,202 +1,603 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>A-TrainBeatz • Now Playing</title>
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0; padding: 0;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    html, body {
-      height: 100%;
-      overflow: hidden;
-      background: #121212;
-      color: #fff;
-    }
+const express = require('express');
+const axios = require('axios');
+const cors = require('cors');
+const qs = require('querystring');
+const crypto = require('crypto');
 
-    body {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      position: relative;
-    }
+require('dotenv').config();
 
-    #canvas-bg {
-      position: fixed;
-      top: 0; left: 0;
-      width: 100vw; height: 100vh;
-      z-index: 0;
-      pointer-events: none; /* So it doesn't interfere with clicks */
-    }
+const app = express();
 
-    #track-info {
-      position: relative;
-      z-index: 10; /* above the canvas */
-      background: rgba(30, 30, 30, 0.85);
-      padding: 25px;
-      border-radius: 15px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.7);
-      max-width: 450px;
-      width: 90vw;
-      text-align: center;
-    }
+// ============================================================
+// CONFIG
+// ============================================================
 
-    h1 {
-      margin-bottom: 20px;
-      font-size: 2rem;
-      color: #1db954;
-      position: relative;
-      z-index: 10;
-      text-align: center;
-    }
+const PORT = process.env.PORT || 3000;
 
-    img {
-      width: 100%;
-      max-width: 400px;
-      border-radius: 10px;
-      margin-bottom: 20px;
-      user-select: none;
-    }
+const CLIENT_ID = process.env.CLIENT_ID;
+const CLIENT_SECRET = process.env.CLIENT_SECRET;
+const REDIRECT_URI = process.env.REDIRECT_URI;
 
-    .track-name {
-      font-size: 1.5rem;
-      font-weight: bold;
-      color: #fff;
-    }
+// Example:
+// FRONTEND_URL=https://yourusername.github.io
+const FRONTEND_URL = https://a-trainbeatz.github.io
+  process.env.FRONTEND_URL || 'http://localhost:3000';
 
-    .artist-name {
-      font-size: 1.1rem;
-      color: #bbb;
-      margin-bottom: 10px;
-    }
-
-    .progress-time {
-      font-size: 0.95rem;
-      color: #888;
-    }
-
-    @media (max-width: 600px) {
-      h1 {
-        font-size: 1.5rem;
-      }
-      .track-name {
-        font-size: 1.2rem;
-      }
-      .artist-name {
-        font-size: 1rem;
-      }
-    }
-  </style>
-</head>
-<body>
-  <canvas id="canvas-bg"></canvas>
-
-  <h1>🎧 A-Train is listening to...</h1>
-  <div id="track-info">
-    <div id="content">Loading...</div>
-  </div>
-
-  <script>
-    // ---------- Fluid simulation canvas ----------
-    const canvas = document.getElementById('canvas-bg');
-    const ctx = canvas.getContext('2d');
-    let width, height;
-    let drops = [];
-
-    function resize() {
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
-    }
-
-    window.addEventListener('resize', resize);
-    resize();
-
-    class Drop {
-      constructor() {
-        this.reset();
-      }
-      reset() {
-        this.x = Math.random() * width;
-        this.y = Math.random() * height;
-        this.radius = 20 + Math.random() * 30;
-        this.vx = (Math.random() - 0.5) * 0.3;
-        this.vy = (Math.random() - 0.5) * 0.3;
-        this.color = `hsla(${Math.random() * 360}, 80%, 60%, 0.1)`;
-        this.pulsePhase = Math.random() * Math.PI * 2;
-      }
-      update() {
-        this.x += this.vx;
-        this.y += this.vy;
-        this.pulsePhase += 0.02;
-        if(this.x < -this.radius) this.x = width + this.radius;
-        else if(this.x > width + this.radius) this.x = -this.radius;
-        if(this.y < -this.radius) this.y = height + this.radius;
-        else if(this.y > height + this.radius) this.y = -this.radius;
-      }
-      draw(ctx) {
-        const pulse = 0.75 + Math.sin(this.pulsePhase) * 0.25;
-        const r = this.radius * pulse;
-        const gradient = ctx.createRadialGradient(this.x, this.y, r*0.2, this.x, this.y, r);
-        gradient.addColorStop(0, this.color.replace('0.1', '0.15'));
-        gradient.addColorStop(1, this.color.replace('0.1', '0'));
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-
-    for(let i=0; i<12; i++) {
-      drops.push(new Drop());
-    }
-
-    function animate() {
-      ctx.clearRect(0,0,width,height);
-      for(let drop of drops) {
-        drop.update();
-        drop.draw(ctx);
-      }
-      requestAnimationFrame(animate);
-    }
-    animate();
-
-    // ---------- Spotify Now Playing fetch ----------
-    function formatTime(ms) {
-      const minutes = Math.floor(ms / 60000);
-      const seconds = Math.floor((ms % 60000) / 1000);
-      return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-    }
-
-    async function fetchNowPlaying() {
-  try {
-    const res = await fetch('https://spotify-backend-pkqi.onrender.com/');
-
-    // 1. Check for Spotify's "No Content" status or empty string
-    if (res.status === 204) {
-      console.log('Nothing is currently playing.');
-      return null; // Return early without parsing JSON
-    }
-
-    if (!res.ok) {
-      throw new Error(`HTTP error! status: ${res.status}`);
-    }
-
-    // 2. Only parse JSON if you actually have content
-    const data = await res.json();
-    return data;
-
-  } catch (error) {
-    console.error('Error fetching now playing:', error);
-  }
+if (!CLIENT_ID || !CLIENT_SECRET || !REDIRECT_URI) {
+  console.error('Missing required Spotify environment variables.');
+  process.exit(1);
 }
 
+// ============================================================
+// CORS
+// ============================================================
 
-    fetchNowPlaying();
-    setInterval(fetchNowPlaying, 1000);
-  </script>
-</body>
-</html>
+app.use(cors({
+  origin: FRONTEND_URL,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+app.use(express.json());
+
+// ============================================================
+// TOKEN STATE
+// ============================================================
+
+// IMPORTANT:
+// These are in-memory.
+//
+// On Render, a restart/redeploy will erase them.
+// For a truly persistent application, store the refresh token
+// in a database or other persistent secret store.
+
+let access_token = '';
+let refresh_token = '';
+let token_expires_at = 0;
+
+// Used to prevent several simultaneous requests from attempting
+// to refresh the same access token.
+let refreshPromise = null;
+
+// ============================================================
+// SCOPES
+// ============================================================
+
+const SCOPES = [
+  'user-read-playback-state',
+  'user-read-currently-playing'
+].join(' ');
+
+// ============================================================
+// HELPER: Spotify Basic Auth
+// ============================================================
+
+function spotifyAuthHeader() {
+  return (
+    'Basic ' +
+    Buffer
+      .from(`${CLIENT_ID}:${CLIENT_SECRET}`)
+      .toString('base64')
+  );
+}
+
+// ============================================================
+// LOGIN
+// ============================================================
+
+app.get('/login', (req, res) => {
+  const state = crypto.randomBytes(16).toString('hex');
+
+  // For a production application, store/verify this state.
+  // This simple version keeps the existing architecture.
+  const params = qs.stringify({
+    client_id: CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: REDIRECT_URI,
+    scope: SCOPES,
+    state
+  });
+
+  const authorizeURL =
+    'https://accounts.spotify.com/authorize?' + params;
+
+  console.log('Redirecting to Spotify authorization.');
+
+  res.redirect(authorizeURL);
+});
+
+// ============================================================
+// CALLBACK
+// ============================================================
+
+app.get('/callback', async (req, res) => {
+  const { code, error } = req.query;
+
+  if (error) {
+    return res.status(400).send(
+      `Spotify authorization failed: ${error}`
+    );
+  }
+
+  if (!code) {
+    return res.status(400).send(
+      'No authorization code was provided.'
+    );
+  }
+
+  try {
+    const response = await axios.post(
+      'https://accounts.spotify.com/api/token',
+
+      qs.stringify({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: REDIRECT_URI
+      }),
+
+      {
+        headers: {
+          Authorization: spotifyAuthHeader(),
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      }
+    );
+
+    access_token = response.data.access_token;
+
+    if (response.data.refresh_token) {
+      refresh_token = response.data.refresh_token;
+    }
+
+    token_expires_at =
+      Date.now() + (response.data.expires_in * 1000);
+
+    console.log('Spotify authorization successful.');
+
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Spotify Connected</title>
+        </head>
+        <body style="
+          background:#121212;
+          color:white;
+          font-family:Arial,sans-serif;
+          text-align:center;
+          padding:50px;
+        ">
+          <h2 style="color:#1DB954;">
+            Spotify authorization successful!
+          </h2>
+
+          <p>You can close this tab.</p>
+
+          <script>
+            setTimeout(() => {
+              window.close();
+            }, 1500);
+          </script>
+        </body>
+      </html>
+    `);
+
+  } catch (err) {
+    console.error(
+      'Spotify token error:',
+      err.response?.data || err.message
+    );
+
+    res.status(500).send(
+      'Error during Spotify authorization.'
+    );
+  }
+});
+
+// ============================================================
+// REFRESH ACCESS TOKEN
+// ============================================================
+
+async function refreshAccessToken() {
+
+  if (!refresh_token) {
+    throw new Error(
+      'No Spotify refresh token available. Visit /login.'
+    );
+  }
+
+  // If another request is already refreshing the token,
+  // wait for that request instead of sending another refresh.
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    try {
+
+      console.log('Refreshing Spotify access token...');
+
+      const response = await axios.post(
+        'https://accounts.spotify.com/api/token',
+
+        qs.stringify({
+          grant_type: 'refresh_token',
+          refresh_token
+        }),
+
+        {
+          headers: {
+            Authorization: spotifyAuthHeader(),
+            'Content-Type':
+              'application/x-www-form-urlencoded'
+          }
+        }
+      );
+
+      access_token = response.data.access_token;
+
+      token_expires_at =
+        Date.now() +
+        (response.data.expires_in * 1000);
+
+      // Spotify may return a replacement refresh token.
+      // If it doesn't, KEEP the old one.
+      if (response.data.refresh_token) {
+        refresh_token = response.data.refresh_token;
+      }
+
+      console.log(
+        'Spotify access token refreshed successfully.'
+      );
+
+      return access_token;
+
+    } catch (err) {
+
+      const spotifyError = err.response?.data;
+
+      console.error(
+        'Spotify refresh error:',
+        spotifyError || err.message
+      );
+
+      // Spotify now uses invalid_grant when the refresh token
+      // is expired/revoked.
+      if (
+        spotifyError?.error === 'invalid_grant'
+      ) {
+        console.error(
+          'Spotify refresh token is expired or revoked.'
+        );
+
+        access_token = '';
+        refresh_token = '';
+        token_expires_at = 0;
+
+        throw new Error(
+          'SPOTIFY_REAUTH_REQUIRED'
+        );
+      }
+
+      throw err;
+
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+// ============================================================
+// GET VALID ACCESS TOKEN
+// ============================================================
+
+async function getValidAccessToken() {
+
+  // Refresh one minute before expiration.
+  const needsRefresh =
+    !access_token ||
+    Date.now() >= token_expires_at - 60000;
+
+  if (needsRefresh) {
+
+    if (!refresh_token) {
+      throw new Error('SPOTIFY_REAUTH_REQUIRED');
+    }
+
+    await refreshAccessToken();
+  }
+
+  return access_token;
+}
+
+// ============================================================
+// STATUS
+// ============================================================
+
+app.get('/status', (req, res) => {
+  res.json({
+    spotifyConnected: !!refresh_token,
+    accessTokenAvailable: !!access_token,
+    accessTokenExpiresAt: token_expires_at || null
+  });
+});
+
+// ============================================================
+// MANUAL REFRESH
+// ============================================================
+
+app.get('/refresh', async (req, res) => {
+
+  try {
+
+    const token = await refreshAccessToken();
+
+    res.json({
+      success: true,
+      message: 'Spotify access token refreshed.',
+      expiresAt: token_expires_at
+    });
+
+  } catch (err) {
+
+    console.error(
+      'Manual refresh error:',
+      err.message
+    );
+
+    if (err.message === 'SPOTIFY_REAUTH_REQUIRED') {
+      return res.status(401).json({
+        success: false,
+        requiresLogin: true,
+        loginUrl: '/login',
+        error:
+          'Spotify authorization has expired. Please reconnect.'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      error: 'Failed to refresh Spotify token.'
+    });
+  }
+});
+
+// ============================================================
+// NOW PLAYING
+// ============================================================
+
+app.get('/now-playing', async (req, res) => {
+
+  try {
+
+    const token = await getValidAccessToken();
+
+    const response = await axios.get(
+      'https://api.spotify.com/v1/me/player',
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+
+        // Optional but useful for track/episode handling.
+        params: {
+          additional_types: 'track,episode'
+        },
+
+        validateStatus: () => true
+      }
+    );
+
+    // Spotify uses 204 when nothing is playing.
+    if (response.status === 204) {
+      return res.status(204).send();
+    }
+
+    // Access token expired unexpectedly.
+    if (response.status === 401) {
+
+      try {
+        await refreshAccessToken();
+
+        const retry = await axios.get(
+          'https://api.spotify.com/v1/me/player',
+          {
+            headers: {
+              Authorization:
+                `Bearer ${access_token}`
+            },
+            params: {
+              additional_types: 'track,episode'
+            },
+            validateStatus: () => true
+          }
+        );
+
+        if (retry.status === 204) {
+          return res.status(204).send();
+        }
+
+        if (retry.status >= 200 && retry.status < 300) {
+          return res.json(retry.data);
+        }
+
+      } catch (refreshError) {
+
+        if (
+          refreshError.message ===
+          'SPOTIFY_REAUTH_REQUIRED'
+        ) {
+          return res.status(401).json({
+            requiresLogin: true,
+            loginUrl: '/login',
+            error:
+              'Spotify authorization expired. Please reconnect.'
+          });
+        }
+      }
+
+      return res.status(401).json({
+        requiresLogin: true,
+        loginUrl: '/login',
+        error:
+          'Spotify session expired. Please reconnect.'
+      });
+    }
+
+    if (response.status === 403) {
+      return res.status(403).json({
+        error:
+          'Spotify denied access to the playback endpoint.'
+      });
+    }
+
+    if (response.status === 429) {
+
+      return res.status(429).json({
+        error:
+          'Spotify rate limit reached. Please slow down.'
+      });
+    }
+
+    if (response.status >= 400) {
+
+      console.error(
+        'Spotify playback error:',
+        response.data
+      );
+
+      return res.status(response.status).json({
+        error: 'Spotify playback request failed.',
+        spotify: response.data
+      });
+    }
+
+    res.json(response.data);
+
+  } catch (err) {
+
+    console.error(
+      'Now-playing error:',
+      err.response?.data || err.message
+    );
+
+    if (
+      err.message === 'SPOTIFY_REAUTH_REQUIRED'
+    ) {
+      return res.status(401).json({
+        requiresLogin: true,
+        loginUrl: '/login',
+        error:
+          'Spotify authorization expired. Please reconnect.'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Failed to fetch now playing.'
+    });
+  }
+});
+
+// ============================================================
+// PLAYER ALIAS
+// ============================================================
+
+app.get('/player', async (req, res) => {
+
+  // Keep /player working for compatibility.
+  req.url = '/now-playing';
+
+  try {
+
+    const token = await getValidAccessToken();
+
+    const response = await axios.get(
+      'https://api.spotify.com/v1/me/player',
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        params: {
+          additional_types: 'track,episode'
+        },
+        validateStatus: () => true
+      }
+    );
+
+    if (response.status === 204) {
+      return res.status(204).send();
+    }
+
+    if (response.status === 401) {
+      return res.status(401).json({
+        requiresLogin: true,
+        loginUrl: '/login',
+        error:
+          'Spotify session expired. Please reconnect.'
+      });
+    }
+
+    if (response.status >= 400) {
+      return res.status(response.status).json({
+        error: 'Spotify playback request failed.',
+        spotify: response.data
+      });
+    }
+
+    res.json(response.data);
+
+  } catch (err) {
+
+    console.error(
+      'Player error:',
+      err.response?.data || err.message
+    );
+
+    if (
+      err.message === 'SPOTIFY_REAUTH_REQUIRED'
+    ) {
+      return res.status(401).json({
+        requiresLogin: true,
+        loginUrl: '/login',
+        error:
+          'Spotify authorization expired. Please reconnect.'
+      });
+    }
+
+    res.status(500).json({
+      error:
+        'Failed to fetch Spotify playback state.'
+    });
+  }
+});
+
+// ============================================================
+// ROOT
+// ============================================================
+
+app.get('/', (req, res) => {
+  res.json({
+    status: 'online',
+    spotify: 'A-TrainBeatz backend',
+    endpoints: {
+      login: '/login',
+      callback: '/callback',
+      status: '/status',
+      refresh: '/refresh',
+      nowPlaying: '/now-playing',
+      player: '/player'
+    }
+  });
+});
+
+// ============================================================
+// SERVER
+// ============================================================
+
+app.listen(PORT, () => {
+  console.log(
+    `Server running on port ${PORT}`
+  );
+});
