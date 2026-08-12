@@ -2,15 +2,31 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+
   <title>A-TrainBeatz • Now Playing</title>
+
+  <!-- Eruda mobile developer console -->
+  <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+
   <style>
     * {
       box-sizing: border-box;
-      margin: 0; padding: 0;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      font-family:
+        'Segoe UI',
+        Tahoma,
+        Geneva,
+        Verdana,
+        sans-serif;
     }
-    html, body {
+
+    html,
+    body {
       height: 100%;
       overflow: hidden;
       background: #121212;
@@ -27,38 +43,54 @@
 
     #canvas-bg {
       position: fixed;
-      top: 0; left: 0;
-      width: 100vw; height: 100vh;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
       z-index: 0;
-      pointer-events: none; /* So it doesn't interfere with clicks */
+      pointer-events: none;
     }
 
     #track-info {
       position: relative;
-      z-index: 10; /* above the canvas */
+      z-index: 10;
+
       background: rgba(30, 30, 30, 0.85);
+
       padding: 25px;
+
       border-radius: 15px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.7);
+
+      box-shadow:
+        0 4px 20px rgba(0, 0, 0, 0.7);
+
       max-width: 450px;
       width: 90vw;
+
       text-align: center;
     }
 
     h1 {
       margin-bottom: 20px;
+
       font-size: 2rem;
+
       color: #1db954;
+
       position: relative;
       z-index: 10;
+
       text-align: center;
     }
 
     img {
       width: 100%;
       max-width: 400px;
+
       border-radius: 10px;
+
       margin-bottom: 20px;
+
       user-select: none;
     }
 
@@ -79,124 +111,640 @@
       color: #888;
     }
 
+    .status {
+      color: #aaa;
+      margin-top: 10px;
+    }
+
+    .login-button {
+      display: inline-block;
+
+      margin-top: 15px;
+
+      padding: 12px 20px;
+
+      border-radius: 999px;
+
+      background: #1db954;
+
+      color: white;
+
+      text-decoration: none;
+
+      font-weight: bold;
+    }
+
     @media (max-width: 600px) {
       h1 {
         font-size: 1.5rem;
       }
+
       .track-name {
         font-size: 1.2rem;
       }
+
       .artist-name {
         font-size: 1rem;
       }
     }
   </style>
 </head>
+
 <body>
+
   <canvas id="canvas-bg"></canvas>
 
   <h1>🎧 A-Train is listening to...</h1>
+
   <div id="track-info">
-    <div id="content">Loading...</div>
+    <div id="content">
+      Loading...
+    </div>
   </div>
 
   <script>
-    // ---------- Fluid simulation canvas ----------
-    const canvas = document.getElementById('canvas-bg');
-    const ctx = canvas.getContext('2d');
-    let width, height;
-    let drops = [];
+    // ==========================================================
+    // ERUDA
+    // ==========================================================
 
-    function resize() {
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
+    try {
+      eruda.init();
+      console.log('Eruda initialized.');
+    } catch (error) {
+      console.error(
+        'Failed to initialize Eruda:',
+        error
+      );
     }
 
-    window.addEventListener('resize', resize);
+    // ==========================================================
+    // CONFIG
+    // ==========================================================
+
+    const BACKEND =
+      'https://spotify-backend-pkqi.onrender.com';
+
+    const NOW_PLAYING_URL =
+      `${BACKEND}/now-playing`;
+
+    const LOGIN_URL =
+      `${BACKEND}/login`;
+
+    // ==========================================================
+    // CANVAS
+    // ==========================================================
+
+    const canvas =
+      document.getElementById('canvas-bg');
+
+    const ctx =
+      canvas.getContext('2d');
+
+    let width;
+    let height;
+
+    const drops = [];
+
+    function resize() {
+
+      width =
+        canvas.width =
+        window.innerWidth;
+
+      height =
+        canvas.height =
+        window.innerHeight;
+    }
+
+    window.addEventListener(
+      'resize',
+      resize
+    );
+
     resize();
 
     class Drop {
+
       constructor() {
         this.reset();
       }
+
       reset() {
-        this.x = Math.random() * width;
-        this.y = Math.random() * height;
-        this.radius = 20 + Math.random() * 30;
-        this.vx = (Math.random() - 0.5) * 0.3;
-        this.vy = (Math.random() - 0.5) * 0.3;
-        this.color = `hsla(${Math.random() * 360}, 80%, 60%, 0.1)`;
-        this.pulsePhase = Math.random() * Math.PI * 2;
+
+        this.x =
+          Math.random() * width;
+
+        this.y =
+          Math.random() * height;
+
+        this.radius =
+          20 + Math.random() * 30;
+
+        this.vx =
+          (Math.random() - 0.5) * 0.3;
+
+        this.vy =
+          (Math.random() - 0.5) * 0.3;
+
+        this.color =
+          `hsla(
+            ${Math.random() * 360},
+            80%,
+            60%,
+            0.1
+          )`;
+
+        this.pulsePhase =
+          Math.random() *
+          Math.PI *
+          2;
       }
+
       update() {
+
         this.x += this.vx;
         this.y += this.vy;
+
         this.pulsePhase += 0.02;
-        if(this.x < -this.radius) this.x = width + this.radius;
-        else if(this.x > width + this.radius) this.x = -this.radius;
-        if(this.y < -this.radius) this.y = height + this.radius;
-        else if(this.y > height + this.radius) this.y = -this.radius;
+
+        if (
+          this.x <
+          -this.radius
+        ) {
+          this.x =
+            width +
+            this.radius;
+
+        } else if (
+          this.x >
+          width +
+          this.radius
+        ) {
+          this.x =
+            -this.radius;
+        }
+
+        if (
+          this.y <
+          -this.radius
+        ) {
+          this.y =
+            height +
+            this.radius;
+
+        } else if (
+          this.y >
+          height +
+          this.radius
+        ) {
+          this.y =
+            -this.radius;
+        }
       }
+
       draw(ctx) {
-        const pulse = 0.75 + Math.sin(this.pulsePhase) * 0.25;
-        const r = this.radius * pulse;
-        const gradient = ctx.createRadialGradient(this.x, this.y, r*0.2, this.x, this.y, r);
-        gradient.addColorStop(0, this.color.replace('0.1', '0.15'));
-        gradient.addColorStop(1, this.color.replace('0.1', '0'));
-        ctx.fillStyle = gradient;
+
+        const pulse =
+          0.75 +
+          Math.sin(
+            this.pulsePhase
+          ) *
+          0.25;
+
+        const r =
+          this.radius *
+          pulse;
+
+        const gradient =
+          ctx.createRadialGradient(
+            this.x,
+            this.y,
+            r * 0.2,
+            this.x,
+            this.y,
+            r
+          );
+
+        gradient.addColorStop(
+          0,
+          this.color.replace(
+            '0.1',
+            '0.15'
+          )
+        );
+
+        gradient.addColorStop(
+          1,
+          this.color.replace(
+            '0.1',
+            '0'
+          )
+        );
+
+        ctx.fillStyle =
+          gradient;
+
         ctx.beginPath();
-        ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+
+        ctx.arc(
+          this.x,
+          this.y,
+          r,
+          0,
+          Math.PI * 2
+        );
+
         ctx.fill();
       }
     }
 
-    for(let i=0; i<12; i++) {
-      drops.push(new Drop());
+    for (
+      let i = 0;
+      i < 12;
+      i++
+    ) {
+      drops.push(
+        new Drop()
+      );
     }
 
     function animate() {
-      ctx.clearRect(0,0,width,height);
-      for(let drop of drops) {
+
+      ctx.clearRect(
+        0,
+        0,
+        width,
+        height
+      );
+
+      for (
+        const drop of drops
+      ) {
         drop.update();
         drop.draw(ctx);
       }
-      requestAnimationFrame(animate);
+
+      requestAnimationFrame(
+        animate
+      );
     }
+
     animate();
 
-    // ---------- Spotify Now Playing fetch ----------
+    // ==========================================================
+    // FORMAT TIME
+    // ==========================================================
+
     function formatTime(ms) {
-      const minutes = Math.floor(ms / 60000);
-      const seconds = Math.floor((ms % 60000) / 1000);
-      return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+
+      if (
+        typeof ms !== 'number' ||
+        !Number.isFinite(ms)
+      ) {
+        return '0:00';
+      }
+
+      const minutes =
+        Math.floor(
+          ms / 60000
+        );
+
+      const seconds =
+        Math.floor(
+          (ms % 60000) / 1000
+        );
+
+      return (
+        `${minutes}:` +
+        `${seconds < 10 ? '0' : ''}` +
+        `${seconds}`
+      );
     }
+
+    // ==========================================================
+    // RENDER
+    // ==========================================================
+
+    function showMessage(message) {
+
+      document.getElementById(
+        'content'
+      ).innerHTML = `
+        <div class="status">
+          ${message}
+        </div>
+      `;
+    }
+
+    function showLogin() {
+
+      document.getElementById(
+        'content'
+      ).innerHTML = `
+        <div class="status">
+          Spotify needs to be connected.
+        </div>
+
+        <a
+          class="login-button"
+          href="${LOGIN_URL}"
+        >
+          Connect Spotify
+        </a>
+      `;
+    }
+
+    function showTrack(data) {
+
+      if (
+        !data ||
+        !data.item
+      ) {
+        showMessage(
+          'Nothing is currently playing.'
+        );
+
+        return;
+      }
+
+      const item =
+        data.item;
+
+      const trackName =
+        item.name ||
+        'Unknown track';
+
+      const artists =
+        item.artists
+          ?.map(
+            artist =>
+              artist.name
+          )
+          .join(', ') ||
+        'Unknown artist';
+
+      const albumImage =
+        item.album
+          ?.images
+          ?.find(
+            image =>
+              image.url
+          )
+          ?.url;
+
+      const progress =
+        data.progress_ms || 0;
+
+      const duration =
+        item.duration_ms || 0;
+
+      document.getElementById(
+        'content'
+      ).innerHTML = `
+        ${
+          albumImage
+            ? `
+              <img
+                src="${albumImage}"
+                alt="Album artwork"
+              />
+            `
+            : ''
+        }
+
+        <div class="track-name">
+          ${escapeHtml(trackName)}
+        </div>
+
+        <div class="artist-name">
+          ${escapeHtml(artists)}
+        </div>
+
+        <div class="progress-time">
+          ${formatTime(progress)}
+          /
+          ${formatTime(duration)}
+        </div>
+
+        <div class="status">
+          ${
+            data.is_playing
+              ? '▶ Playing'
+              : '⏸ Paused'
+          }
+        </div>
+      `;
+    }
+
+    // ==========================================================
+    // HTML ESCAPE
+    // ==========================================================
+
+    function escapeHtml(value) {
+
+      return String(value)
+        .replace(
+          /&/g,
+          '&amp;'
+        )
+        .replace(
+          /</g,
+          '&lt;'
+        )
+        .replace(
+          />/g,
+          '&gt;'
+        )
+        .replace(
+          /"/g,
+          '&quot;'
+        )
+        .replace(
+          /'/g,
+          '&#039;'
+        );
+    }
+
+    // ==========================================================
+    // FETCH NOW PLAYING
+    // ==========================================================
+
+    let requestInProgress = false;
 
     async function fetchNowPlaying() {
-  try {
-    const res = await fetch('https://spotify-backend-pkqi.onrender.com/');
 
-    // 1. Check for Spotify's "No Content" status or empty string
-    if (res.status === 204) {
-      console.log('Nothing is currently playing.');
-      return null; // Return early without parsing JSON
+      if (requestInProgress) {
+        return;
+      }
+
+      requestInProgress = true;
+
+      try {
+
+        console.log(
+          'Fetching:',
+          NOW_PLAYING_URL
+        );
+
+        const res =
+          await fetch(
+            NOW_PLAYING_URL,
+            {
+              method: 'GET',
+              cache: 'no-store'
+            }
+          );
+
+        console.log(
+          'Backend response:',
+          res.status,
+          res.statusText
+        );
+
+        // ------------------------------------------------------
+        // NOTHING PLAYING
+        // ------------------------------------------------------
+
+        if (
+          res.status === 204
+        ) {
+
+          showMessage(
+            'Nothing is currently playing.'
+          );
+
+          return;
+        }
+
+        // ------------------------------------------------------
+        // LOGIN REQUIRED
+        // ------------------------------------------------------
+
+        if (
+          res.status === 401
+        ) {
+
+          let data = null;
+
+          try {
+            data =
+              await res.json();
+          } catch (_) {}
+
+          console.warn(
+            'Spotify authorization required:',
+            data
+          );
+
+          if (
+            data?.requiresLogin
+          ) {
+            showLogin();
+          } else {
+            showMessage(
+              'Spotify authorization expired.'
+            );
+          }
+
+          return;
+        }
+
+        // ------------------------------------------------------
+        // OTHER HTTP ERRORS
+        // ------------------------------------------------------
+
+        if (!res.ok) {
+
+          let errorBody = '';
+
+          try {
+            errorBody =
+              await res.text();
+          } catch (_) {}
+
+          throw new Error(
+            `HTTP ${res.status}: ${errorBody}`
+          );
+        }
+
+        // ------------------------------------------------------
+        // JSON
+        // ------------------------------------------------------
+
+        const text =
+          await res.text();
+
+        if (!text) {
+
+          showMessage(
+            'Spotify returned no data.'
+          );
+
+          return;
+        }
+
+        let data;
+
+        try {
+
+          data =
+            JSON.parse(text);
+
+        } catch (jsonError) {
+
+          console.error(
+            'JSON parsing error:',
+            jsonError
+          );
+
+          console.error(
+            'Raw response:',
+            text
+          );
+
+          throw new Error(
+            'Backend returned invalid JSON.'
+          );
+        }
+
+        console.log(
+          'Spotify data:',
+          data
+        );
+
+        showTrack(data);
+
+      } catch (error) {
+
+        console.error(
+          'Error fetching now playing:',
+          error
+        );
+
+        showMessage(
+          'Unable to contact Spotify backend.'
+        );
+
+      } finally {
+
+        requestInProgress =
+          false;
+      }
     }
 
-    if (!res.ok) {
-      throw new Error(`HTTP error! status: ${res.status}`);
-    }
-
-    // 2. Only parse JSON if you actually have content
-    const data = await res.json();
-    return data;
-
-  } catch (error) {
-    console.error('Error fetching now playing:', error);
-  }
-}
-
+    // ==========================================================
+    // START
+    // ==========================================================
 
     fetchNowPlaying();
-    setInterval(fetchNowPlaying, 1000);
+
+    // Five seconds is plenty for a public now-playing display.
+    setInterval(
+      fetchNowPlaying,
+      5000
+    );
+
   </script>
+
 </body>
 </html>
