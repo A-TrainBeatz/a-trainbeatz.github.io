@@ -18,15 +18,11 @@
     }
 
     body {
-      min-height: 100vh;
       display: flex;
-      flex-direction: column;
       justify-content: center;
       align-items: center;
-      gap: 0;
-      padding: 24px;
+      height: 100vh;
       position: relative;
-      overflow: hidden;
     }
 
     #canvas-bg {
@@ -83,23 +79,6 @@
       color: #888;
     }
 
-    #start-playback {
-      margin-top: 18px;
-      border: 0;
-      border-radius: 999px;
-      padding: 12px 20px;
-      background: #1db954;
-      color: #000;
-      font-size: 1rem;
-      font-weight: 700;
-      cursor: pointer;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    #start-playback:active {
-      transform: scale(0.98);
-    }
-
     @media (max-width: 600px) {
       h1 {
         font-size: 1.5rem;
@@ -119,10 +98,8 @@
   <h1>🎧 A-Train is listening to...</h1>
   <div id="track-info">
     <div id="content">Loading...</div>
-    <button id="start-playback" type="button" hidden>▶ Start Spotify Playback</button>
   </div>
 
-  <script src="https://sdk.scdn.co/spotify-player.js"></script>
   <script>
     // ---------- Fluid simulation canvas ----------
     const canvas = document.getElementById('canvas-bg');
@@ -187,291 +164,44 @@
     }
     animate();
 
-    // ---------- Spotify Web Playback SDK ----------
-    const API_BASE = "https://spotify-backend-pkqi.onrender.com";
-    const NOW_PLAYING_URL = `${API_BASE}/now-playing`;
-    const PLAYER_TOKEN_URL = `${API_BASE}/player-token`;
-    const TRANSFER_URL = `${API_BASE}/transfer-playback`;
-
-    let player = null;
-    let deviceId = null;
-    let currentTrackId = null;
-    let syncing = false;
-
-    const content = document.getElementById("content");
-    const startButton = document.getElementById("start-playback");
-
+    // ---------- Spotify Now Playing fetch ----------
     function formatTime(ms) {
-      const value = Number(ms);
-      if (!Number.isFinite(value) || value < 0) return "0:00";
-      const minutes = Math.floor(value / 60000);
-      const seconds = Math.floor((value % 60000) / 1000);
-      return `${minutes}:${String(seconds).padStart(2, "0")}`;
+      const minutes = Math.floor(ms / 60000);
+      const seconds = Math.floor((ms % 60000) / 1000);
+      return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
     }
 
-    function escapeHtml(value) {
-      return String(value ?? "").replace(/[&<>"']/g, char => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#039;"
-      }[char]));
-    }
-
-    function renderStatus(message) {
-      content.innerHTML = `<p class="status">${escapeHtml(message)}</p>`;
-    }
-
-    function renderTrack(data, positionMs = 0) {
-      const track = data?.item;
-
-      if (!track) {
-        renderStatus("Nothing playing right now.");
-        return;
-      }
-
-      const artists = Array.isArray(track.artists)
-        ? track.artists.map(a => a.name).filter(Boolean).join(", ")
-        : "Unknown artist";
-
-      const image = track.album?.images?.[0]?.url || "";
-
-      content.innerHTML = `
-        ${image ? `<img class="album-cover" src="${escapeHtml(image)}" alt="Album cover">` : ""}
-        <div class="track-name">${escapeHtml(track.name || "Unknown track")}</div>
-        <div class="artist-name">by ${escapeHtml(artists || "Unknown artist")}</div>
-        <div class="progress-time" id="progress-time">
-          Progress: ${formatTime(positionMs)} / ${formatTime(track.duration_ms)}
-        </div>
-      `;
-    }
-
-    async function getPlayerToken() {
-      const response = await fetch(PLAYER_TOKEN_URL, {
-        credentials: "include",
-        cache: "no-store",
-        headers: { Accept: "application/json" }
-      });
-
-      if (response.status === 401) throw new Error("LOGIN_REQUIRED");
-      if (!response.ok) {
-        throw new Error(`Player token failed: HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (!data.access_token) {
-        throw new Error("No Spotify player token returned.");
-      }
-
-      return data.access_token;
-    }
-
-    async function getCurrentPlayback() {
-      const response = await fetch(NOW_PLAYING_URL, {
-        credentials: "include",
-        cache: "no-store",
-        headers: { Accept: "application/json" }
-      });
-
-      if (response.status === 204) return null;
-      if (!response.ok) {
-        throw new Error(`Now playing failed: HTTP ${response.status}`);
-      }
-
-      return response.json();
-    }
-
-    async function transferCurrentPlayback() {
-      if (!deviceId || syncing) return;
-
-      syncing = true;
-
+    async function fetchNowPlaying() {
       try {
-        const data = await getCurrentPlayback();
+        const res = await fetch('https://spotify-backend-pkqi.onrender.com/now-playing');
+        if (!res.ok) throw new Error('Fetch failed');
+        const data = await res.json();
 
-        if (!data?.item) {
-          renderStatus("Nothing playing right now.");
+        if (!data || !data.item) {
+          document.getElementById('content').innerHTML = '<p>Nothing playing right now.</p>';
           return;
         }
 
-        const positionMs = Math.max(0, Number(data.progress_ms) || 0);
-        currentTrackId = data.item.id;
-        renderTrack(data, positionMs);
+        const track = data.item.name;
+        const artists = data.item.artists.map(artist => artist.name).join(', ');
+        const image = data.item.album.images[0].url;
+        const progress = formatTime(data.progress_ms);
+        const duration = formatTime(data.item.duration_ms);
 
-        const response = await fetch(TRANSFER_URL, {
-          method: "PUT",
-          credentials: "include",
-          cache: "no-store",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json"
-          },
-          body: JSON.stringify({
-            device_id: deviceId,
-            track_uri: data.item.uri,
-            position_ms: positionMs,
-            play: true
-          })
-        });
-
-        if (!response.ok && response.status !== 204) {
-          const detail = await response.text();
-          throw new Error(
-            `Transfer failed: HTTP ${response.status} ${detail}`
-          );
-        }
-      } finally {
-        syncing = false;
+        document.getElementById('content').innerHTML = `
+          <img src="${image}" alt="Album cover">
+          <div class="track-name">${track}</div>
+          <div class="artist-name">by ${artists}</div>
+          <div class="progress-time">Progress: ${progress} / ${duration}</div>
+        `;
+      } catch (err) {
+        console.error(err);
+        document.getElementById('content').innerHTML = '<p>Could not load track info.</p>';
       }
     }
 
-    async function startAfterUserGesture() {
-      if (!player) return;
-
-      try {
-        if (typeof player.activateElement === "function") {
-          await player.activateElement();
-        }
-
-        await transferCurrentPlayback();
-        await player.resume();
-
-        startButton.hidden = true;
-      } catch (error) {
-        console.error("Manual playback start failed:", error);
-        renderStatus(
-          `Could not start Spotify audio playback: ${error.message}`
-        );
-      }
-    }
-
-    startButton.addEventListener("click", startAfterUserGesture);
-
-    function updateProgress(position, duration) {
-      const el = document.getElementById("progress-time");
-      if (el && duration) {
-        el.textContent =
-          `Progress: ${formatTime(position)} / ${formatTime(duration)}`;
-      }
-    }
-
-    window.onSpotifyWebPlaybackSDKReady = async function () {
-      try {
-        await getPlayerToken();
-
-        player = new Spotify.Player({
-          name: "A-TrainBeatz Web Player",
-          getOAuthToken: async callback => {
-            try {
-              callback(await getPlayerToken());
-            } catch (error) {
-              console.error("Spotify token refresh failed:", error);
-            }
-          },
-          volume: 0.8
-        });
-
-        player.addListener("initialization_error", ({ message }) => {
-          console.error("Spotify initialization error:", message);
-          renderStatus(`Spotify player initialization failed: ${message}`);
-        });
-
-        player.addListener("authentication_error", ({ message }) => {
-          console.error("Spotify authentication error:", message);
-          renderStatus("Spotify authentication expired. Open /login again.");
-        });
-
-        player.addListener("account_error", ({ message }) => {
-          console.error("Spotify account error:", message);
-          renderStatus("Spotify Web Playback requires Spotify Premium.");
-        });
-
-        player.addListener("playback_error", ({ message }) => {
-          console.error("Spotify playback error:", message);
-          renderStatus(`Spotify playback error: ${message}`);
-        });
-
-        player.addListener("ready", async ({ device_id }) => {
-          deviceId = device_id;
-          console.log("A-TrainBeatz Web Player ready:", deviceId);
-
-          try {
-            await transferCurrentPlayback();
-
-            // iOS/Safari may block the first audible playback until a gesture.
-            const state = await player.getCurrentState();
-
-            if (!state || state.paused) {
-              startButton.hidden = false;
-            }
-          } catch (error) {
-            console.error("Initial playback transfer failed:", error);
-            renderStatus(
-              `Could not start Spotify audio playback: ${error.message}`
-            );
-            startButton.hidden = false;
-          }
-        });
-
-        player.addListener("not_ready", ({ device_id }) => {
-          console.warn("Spotify device offline:", device_id);
-          if (device_id === deviceId) deviceId = null;
-        });
-
-        player.addListener("player_state_changed", state => {
-          if (!state) return;
-
-          const track = state.track_window?.current_track;
-
-          if (track?.id) {
-            currentTrackId = track.id;
-          }
-
-          updateProgress(
-            state.position || 0,
-            track?.duration_ms || 0
-          );
-
-          startButton.hidden = !state.paused;
-        });
-
-        const connected = await player.connect();
-
-        if (!connected) {
-          throw new Error("Spotify Web Playback SDK could not connect.");
-        }
-      } catch (error) {
-        console.error("Spotify Web Playback startup failed:", error);
-
-        renderStatus(
-          error.message === "LOGIN_REQUIRED"
-            ? "Open /login to connect Spotify."
-            : `Could not start Spotify audio playback: ${error.message}`
-        );
-      }
-    };
-
-    async function checkForTrackChange() {
-      try {
-        const data = await getCurrentPlayback();
-
-        if (!data?.item) return;
-
-        renderTrack(data, data.progress_ms || 0);
-
-        if (deviceId && data.item.id !== currentTrackId) {
-          await transferCurrentPlayback();
-        }
-      } catch (error) {
-        console.error("Playback sync check failed:", error);
-      }
-    }
-
-    checkForTrackChange();
-    setInterval(checkForTrackChange, 5000);
-
+    fetchNowPlaying();
+    setInterval(fetchNowPlaying, 1000);
   </script>
 </body>
 </html>
