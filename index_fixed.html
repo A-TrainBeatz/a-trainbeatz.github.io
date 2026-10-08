@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A-TrainBeatz • Now Playing</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        html, body { height: 100%; overflow: hidden; background: #121212; color: #fff; }
+        body { display: flex; justify-content: center; align-items: center; height: 100vh; position: relative; }
+        #canvas-bg { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; }
+        #track-info { position: relative; z-index: 10; background: rgba(30,30,30,.85); padding: 25px; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,.7); max-width: 450px; width: 90vw; text-align: center; }
+        h1 { margin-bottom: 20px; font-size: 1.8rem; color: #1db954; }
+        img { width: 100%; max-width: 400px; border-radius: 10px; margin-bottom: 20px; user-select: none; }
+        .track-name { font-size: 1.5rem; font-weight: bold; margin-bottom: 5px; }
+        .artist-name { font-size: 1.1rem; color: #bbb; margin-bottom: 15px; }
+        .progress-time { font-size: .95rem; color: #888; }
+        .status { color: #aaa; }
+        .error { color: #ff6b6b; }
+        @media (max-width: 600px) {
+            h1 { font-size: 1.4rem; }
+            .track-name { font-size: 1.2rem; }
+            .artist-name { font-size: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas-bg"></canvas>
+    <div id="track-info">
+        <h1>🎧 A-Train is listening to...</h1>
+        <div id="content">Loading...</div>
+    </div>
+
+    <script>
+    const API_BASE = 'https://spotify-backend-pkqi.onrender.com';
+
+    const canvas = document.getElementById('canvas-bg');
+    const ctx = canvas.getContext('2d');
+    let width, height, drops = [];
+
+    function resize() {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    class Drop {
+        constructor() { this.reset(); }
+        reset() {
+            this.x = Math.random() * width;
+            this.y = Math.random() * height;
+            this.radius = 20 + Math.random() * 30;
+            this.vx = (Math.random() - .5) * .3;
+            this.vy = (Math.random() - .5) * .3;
+            this.hue = Math.random() * 360;
+            this.pulsePhase = Math.random() * Math.PI * 2;
+        }
+        update() {
+            this.x += this.vx;
+            this.y += this.vy;
+            this.pulsePhase += .02;
+            if (this.x < -this.radius) this.x = width + this.radius;
+            else if (this.x > width + this.radius) this.x = -this.radius;
+            if (this.y < -this.radius) this.y = height + this.radius;
+            else if (this.y > height + this.radius) this.y = -this.radius;
+        }
+        draw(ctx) {
+            const pulse = .75 + Math.sin(this.pulsePhase) * .25;
+            const r = this.radius * pulse;
+            const gradient = ctx.createRadialGradient(this.x, this.y, r*.2, this.x, this.y, r);
+            gradient.addColorStop(0, `hsla(${this.hue},80%,60%,.15)`);
+            gradient.addColorStop(1, `hsla(${this.hue},80%,60%,0)`);
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    for (let i = 0; i < 12; i++) drops.push(new Drop());
+
+    function animate() {
+        ctx.clearRect(0, 0, width, height);
+        for (const drop of drops) {
+            drop.update();
+            drop.draw(ctx);
+        }
+        requestAnimationFrame(animate);
+    }
+    animate();
+
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;'
+        }[char]));
+    }
+
+    function formatTime(ms) {
+        const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    async function fetchNowPlaying() {
+        const content = document.getElementById('content');
+
+        try {
+            const res = await fetch(`${API_BASE}/now-playing`, {
+                cache: 'no-store'
+            });
+
+            if (res.status === 401) {
+                content.innerHTML = '<p class="status">Spotify login is required. <a href="' +
+                    API_BASE + '/login" style="color:#1db954">Log in</a></p>';
+                return;
+            }
+
+            if (res.status === 204) {
+                content.innerHTML = '<p class="status">Nothing playing right now.</p>';
+                return;
+            }
+
+            if (!res.ok) {
+                throw new Error(`Server returned HTTP ${res.status}`);
+            }
+
+            const data = await res.json();
+
+            if (!data || !data.item) {
+                content.innerHTML = '<p class="status">Nothing playing right now.</p>';
+                return;
+            }
+
+            const track = escapeHtml(data.item.name);
+            const artists = escapeHtml(
+                (data.item.artists || []).map(artist => artist.name).join(', ')
+            );
+            const image = data.item.album?.images?.[0]?.url || '';
+            const progress = formatTime(data.progress_ms);
+            const duration = formatTime(data.item.duration_ms);
+
+            content.innerHTML = `
+                ${image ? `<img src="${escapeHtml(image)}" alt="Album cover">` : ''}
+                <div class="track-name">${track}</div>
+                <div class="artist-name">by ${artists}</div>
+                <div class="progress-time">Progress: ${progress} / ${duration}</div>
+            `;
+        } catch (err) {
+            console.error('Now Playing error:', err);
+            content.innerHTML = '<p class="error">Could not load track info.</p>';
+        }
+    }
+
+    fetchNowPlaying();
+    setInterval(fetchNowPlaying, 5000);
+    </script>
+</body>
+</html>
